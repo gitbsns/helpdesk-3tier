@@ -1,0 +1,13 @@
+{
+  "name": "helpdesk-backend",
+  "version": "1.0.0",
+  "description": "Tier 2: REST API with role-based access (user/agent/admin)",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.12.0"
+  }
+}

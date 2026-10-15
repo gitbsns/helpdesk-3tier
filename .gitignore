@@ -1,0 +1,14 @@
+# Secrets - kabhi commit nahi
+.env
+*.env
+secret.yaml
+*kubeconfig*
+*token*
+*.crt
+*.pem
+
+# Dependencies / junk
+node_modules/
+npm-debug.log
+.DS_Store
+.vscode/

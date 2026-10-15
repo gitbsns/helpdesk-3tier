@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HelpDesk</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+  h1 { margin-bottom: .2rem; } .sub { color: #666; margin-top: 0; }
+  input, textarea, select, button { padding: .45rem .6rem; font-size: 1rem; font-family: inherit; }
+  textarea { width: 100%; box-sizing: border-box; }
+  button { cursor: pointer; }
+  .row { display: flex; gap: .5rem; margin: .5rem 0; } .row input { flex: 1; }
+  .ticket { border: 1px solid #ddd; border-radius: 6px; padding: .6rem .8rem; margin: .5rem 0; }
+  .ticket h4 { margin: 0 0 .2rem; } .meta { color: #666; font-size: .85rem; }
+  .badge { font-size: .75rem; padding: .1rem .45rem; border-radius: 4px; background: #eef; margin-left: .4rem; }
+  .actions { margin-top: .4rem; display: flex; gap: .4rem; }
+  .err { color: #b00020; min-height: 1.2rem; }
+  .hidden { display: none; }
+  table { width: 100%; border-collapse: collapse; } td, th { text-align: left; padding: .3rem; border-bottom: 1px solid #eee; }
+</style>
+</head>
+<body>
+<h1>HelpDesk</h1>
+<p class="sub">Three-tier demo: Nginx (frontend), Node API (backend), PostgreSQL (database)</p>
+<p class="err" id="err"></p>
+
+<section id="loginView">
+  <div class="row"><input id="u" placeholder="username"></div>
+  <div class="row"><input id="p" type="password" placeholder="password (min 8 chars)"></div>
+  <div class="row"><button id="loginBtn">Login</button><button id="registerBtn">Register</button></div>
+</section>
+
+<section id="appView" class="hidden">
+  <p>Logged in as <b id="who"></b> <span class="badge" id="role"></span> <button id="logoutBtn">Logout</button></p>
+  <h3>New ticket</h3>
+  <div class="row"><input id="title" placeholder="Title"></div>
+  <textarea id="desc" rows="3" placeholder="Describe the problem"></textarea>
+  <div class="row"><button id="addBtn">Submit ticket</button></div>
+  <h3 id="listTitle">Tickets</h3>
+  <div id="tickets"></div>
+  <div id="adminView" class="hidden">
+    <h3>Admin: users</h3>
+    <table><thead><tr><th>ID</th><th>User</th><th>Role</th></tr></thead><tbody id="users"></tbody></table>
+  </div>
+</section>
+
+<script>
+let session = JSON.parse(sessionStorage.getItem('session') || 'null');
+const $ = (id) => document.getElementById(id);
+const STATUSES = ['open', 'in_progress', 'closed'];
+const ROLES = ['user', 'agent', 'admin'];
+
+async function api(path, method = 'GET', body) {
+  const res = await fetch(path, {
+    method,
+    headers: { 'Content-Type': 'application/json', ...(session ? { Authorization: 'Bearer ' + session.token } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    $('err').textContent = data.error || 'Error ' + res.status;
+    if (res.status === 401 && session) logout();
+    throw new Error(data.error || 'Request failed');
+  }
+  $('err').textContent = '';
+  return data;
+}
+
+function option(value, selected) {
+  const o = document.createElement('option');
+  o.value = value; o.textContent = value; o.selected = selected;
+  return o;
+}
+
+async function login() {
+  session = await api('/api/login', 'POST', { username: $('u').value, password: $('p').value });
+  sessionStorage.setItem('session', JSON.stringify(session));
+  render();
+}
+async function register() {
+  await api('/api/register', 'POST', { username: $('u').value, password: $('p').value });
+  $('err').textContent = 'Registered. Now login.';
+}
+function logout() { session = null; sessionStorage.removeItem('session'); render(); }
+
+async function addTicket() {
+  await api('/api/tickets', 'POST', { title: $('title').value, description: $('desc').value });
+  $('title').value = ''; $('desc').value = '';
+  load();
+}
+
+async function load() {
+  const isStaff = session.role === 'agent' || session.role === 'admin';
+  $('listTitle').textContent = isStaff ? 'All tickets' : 'My tickets';
+  const tickets = await api('/api/tickets');
+  const box = $('tickets'); box.innerHTML = '';
+  tickets.forEach((t) => {
+    const div = document.createElement('div'); div.className = 'ticket';
+    const h = document.createElement('h4'); h.textContent = '#' + t.id + ' ' + t.title;
+    const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = t.status;
+    h.append(badge);
+    const meta = document.createElement('div'); meta.className = 'meta'; meta.textContent = 'by ' + t.created_by;
+    const body = document.createElement('div'); body.textContent = t.description;
+    div.append(h, meta, body);
+    if (isStaff) {
+      const actions = document.createElement('div'); actions.className = 'actions';
+      const sel = document.createElement('select');
+      STATUSES.forEach((s) => sel.append(option(s, s === t.status)));
+      sel.onchange = async () => { await api('/api/tickets/' + t.id + '/status', 'PATCH', { status: sel.value }); load(); };
+      actions.append(sel);
+      if (session.role === 'admin') {
+        const del = document.createElement('button'); del.textContent = 'Delete';
+        del.onclick = async () => { await api('/api/tickets/' + t.id, 'DELETE'); load(); };
+        actions.append(del);
+      }
+      div.append(actions);
+    }
+    box.append(div);
+  });
+  if (session.role === 'admin') {
+    const users = await api('/api/users');
+    const tb = $('users'); tb.innerHTML = '';
+    users.forEach((u) => {
+      const tr = document.createElement('tr');
+      [u.id, u.username].forEach((v) => { const td = document.createElement('td'); td.textContent = v; tr.append(td); });
+      const td = document.createElement('td');
+      if (u.username === session.username) { td.textContent = u.role + ' (you)'; }
+      else {
+        const sel = document.createElement('select');
+        ROLES.forEach((r) => sel.append(option(r, r === u.role)));
+        sel.onchange = async () => { await api('/api/users/' + u.id + '/role', 'PATCH', { role: sel.value }); load(); };
+        td.append(sel);
+      }
+      tr.append(td); tb.append(tr);
+    });
+  }
+}
+
+function render() {
+  $('loginView').classList.toggle('hidden', !!session);
+  $('appView').classList.toggle('hidden', !session);
+  $('adminView').classList.toggle('hidden', !session || session.role !== 'admin');
+  if (session) { $('who').textContent = session.username; $('role').textContent = session.role; load().catch(() => {}); }
+}
+
+$('loginBtn').onclick = () => login().catch(() => {});
+$('registerBtn').onclick = () => register().catch(() => {});
+$('logoutBtn').onclick = logout;
+$('addBtn').onclick = () => addTicket().catch(() => {});
+render();
+</script>
+</body>
+</html>

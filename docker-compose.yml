@@ -1,0 +1,52 @@
+# Teeno tiers ek saath. Do alag networks se tier isolation:
+#   frontend_net : frontend <-> backend
+#   backend_net  : backend  <-> db
+# Frontend aur DB ek doosre ko direct dekh hi nahi sakte.
+# Sirf frontend ka port (8080) bahar publish hota hai.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: helpdesk
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: helpdesk
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    networks: [backend_net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U helpdesk"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: ./backend
+    environment:
+      PORT: "4000"
+      DB_HOST: db
+      DB_USER: helpdesk
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: helpdesk
+      JWT_SECRET: ${JWT_SECRET}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [frontend_net, backend_net]
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8081:8080"
+    environment:
+      BACKEND_HOST: backend
+      BACKEND_PORT: "4000"
+    depends_on: [backend]
+    networks: [frontend_net]
+
+networks:
+  frontend_net:
+  backend_net:
+
+volumes:
+  dbdata:

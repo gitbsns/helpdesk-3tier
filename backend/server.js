@@ -32,7 +32,7 @@ const STATUSES = ['open', 'in_progress', 'closed'];
 
 const app = express();
 app.disable('x-powered-by');
-app.use(express.json({ limit: '10kb' }));
+app.use(express.json({ limit: '10kb', inflate: false }));
 
 const wrap = (fn) => (req, res, next) =>
   fn(req, res, next).catch((err) => {
